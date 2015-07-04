@@ -1,0 +1,59 @@
+{
+	"name": "poker_one",
+	"version": "0.0.0",
+	"authors": [{
+		"name": "Fei Zhan",
+		"email": ""
+	}],
+	"license": "The MIT License",
+	"description": "poker game for one versus one",
+	"dependencies": [
+		"poker_cards.json"
+	],
+	"files": [
+		"poker_one.js",
+		"poker_one_ai.js"
+	],
+	"board": {
+		"tables": {
+			"number": "2",
+			"names": ["my_table", "your_table"]
+		},
+		"decks": {
+			"number": "2",
+			"names": ["draw", "discard"]
+		},
+		"players": {
+			"number": "2",
+			"names": ["me", "you"],
+			"winners": {
+				"number": "1"
+			}
+		},
+		"cardSets": {
+			"number": "1",
+			"namespaces": ["Poker"]
+		},
+		"maximum": {
+			"wins": "5",
+			"shuffle": "1",
+			"time": "100000"
+		}
+	},
+	"flow": {
+		"initCards": "3",
+		"roundAction": {
+			"drawPhase": {
+				"number": "1"
+			},
+			"playPhase": {
+				"number": "1"
+			},
+			"endPhase": {
+				"number": "1"
+			}
+		},
+		"playerAction": {
+		}
+	}
+}

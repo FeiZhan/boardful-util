@@ -15,16 +15,107 @@ BOARDFUL.core.Namespace = function (name) {
 	return current;
 };
 // init BOARDFUL
-BOARDFUL.core.Init = function () {
+BOARDFUL.core.Init = function (config) {
 	BOARDFUL.core.checkEnvi();
-	BOARDFUL.logger = new BOARDFUL.core.Logger();
-	BOARDFUL.mngr = new BOARDFUL.core.Manager();
-	//BOARDFUL.event_mngr = new BOARDFUL.core.EventManager();
+
+	// create logger
+	BOARDFUL.Logger = new BOARDFUL.core.Logger();
+	BOARDFUL.Logger.add(winston.transports.File, {
+		//filename: 'logs/boardful_' + new Date().toString() + '.log'
+		filename: 'logs/boardful.log'
+	})
+	.remove(winston.transports.Console);
+	BOARDFUL.Logger.log('info', "----------launch----------");
+	// create debug logger
+	BOARDFUL.Debugger = new BOARDFUL.core.Logger();
+	BOARDFUL.Debugger.add(winston.transports.File, {
+		filename: 'logs/debug.log'
+	})
+	.remove(winston.transports.Console);
+	BOARDFUL.Debugger.log('info', "----------launch----------");
+
+	BOARDFUL.Logger.log('info', "launch type", config);
+	BOARDFUL.Logger.log('info', "environment", BOARDFUL.core.Envi);
+
+	BOARDFUL.core.UrlParam = BOARDFUL.core.parseUrl();
+	BOARDFUL.Logger.log('info', "url param", BOARDFUL.core.UrlParam);
+	BOARDFUL.Mngr = new BOARDFUL.core.Manager();
+	BOARDFUL.FileMngr = new BOARDFUL.core.FileManager();
+};
+// start a board
+BOARDFUL.core.runBoard = function (file) {
+	BOARDFUL.FileMngr.load([file], function (contents) {
+		BOARDFUL.Game = new BOARDFUL.core.Game(contents[file]);
+		BOARDFUL.Game.run();
+	});
+};
+BOARDFUL.core.Namespace("BOARDFUL.core");
+
+BOARDFUL.core.BoardLoader = function (board, config) {
+	this.board = board || {};
+	if (undefined !== board.dependency) {
+		this.loadDependency(board.dependency);
+	}
+	else {
+		this.loadComponents(board.files);
+	}
+};
+BOARDFUL.core.BoardLoader.prototype.loadDependency = function (dependency) {
+	var that = this;
+	BOARDFUL.FileMngr.load(dependency, function () {
+		that.loadComponents();
+	});
+};
+BOARDFUL.core.BoardLoader.prototype.loadComponents = function (components) {
+	var that = this;
+	if (undefined !== board.files) {
+		BOARDFUL.FileMngr.load(components, function () {
+			BOARDFUL.Game = new BOARDFUL.core.Game(that.board);
+		});
+	}
+	else {
+		BOARDFUL.Game = new BOARDFUL.core.Game(this.board);
+	}
+};
+BOARDFUL.core.Namespace("BOARDFUL.core");
+
+BOARDFUL.core.Deck = function (owner, config) {
+	this.type = "Deck";
+	this.owner = owner;
+	BOARDFUL.Mngr.add(this);
+	this.config = config || {};
+	this.card_list = {};
+	this.addListeners();
+};
+BOARDFUL.core.Deck.prototype.addListeners = function () {
+	var that = this;
+	if ("draw" === this.config.name) {
+		BOARDFUL.EventMngr.on("InitCards", {
+			level: "game",
+			callback: function (arg) {
+				that.initCards(arg);
+			},
+			id: that.id
+		});
+	}
+};
+BOARDFUL.core.Deck.prototype.initCards = function (arg) {
+	var players = BOARDFUL.Mngr.get(this.owner).player_list;
+	var event_list = [];
+	for (var i in players) {
+		var event = new BOARDFUL.core.Event({
+			name: "CardsDraw",
+			target: players[i],
+			number: arg.number
+		});
+		event_list.push(event.id);
+	}
+	BOARDFUL.EventMngr.front(event_list);
 };
 BOARDFUL.core.Namespace("BOARDFUL.core");
 
 // event
-BOARDFUL.Event = function (arg) {
+BOARDFUL.core.Event = function (arg) {
 	this.type = "Event";
 	this.owner = undefined;
 	BOARDFUL.Mngr.add(this);
@@ -33,7 +124,7 @@ BOARDFUL.Event = function (arg) {
 	this.arg.creation_time = new Date();
 };
 // event level precedence
-BOARDFUL.Event.LEVELS = ["top", "system", "server", "board", "room", "game", "extension", "player", "card", "rear"];
+BOARDFUL.core.EVENT_LEVELS = ["top", "system", "server", "board", "room", "game", "extension", "player", "card", "rear"];
 
 // event manager
 BOARDFUL.core.EventManager = function (owner, config) {
@@ -56,7 +147,7 @@ BOARDFUL.core.EventManager = function (owner, config) {
 	this.name_logger.add(winston.transports.File, {
 		filename: 'logs/event_name.log'
 	})
-	.remove(winston.transports.Console);
+	//.remove(winston.transports.Console);
 	this.name_logger.log('info', "----------launch----------");
 };
 // see or push to the front of event list
@@ -119,7 +210,7 @@ BOARDFUL.core.EventManager.prototype.off = function (event, config) {
 };
 // launch event manager
 BOARDFUL.core.EventManager.prototype.run = function () {
-	switch (BOARDFUL.Mngr.get(this.owner).status) {
+	switch (BOARDFUL.Game.status) {
 	case "pause":
 	case "exit":
 	case "userinput":
@@ -134,10 +225,10 @@ BOARDFUL.core.EventManager.prototype.run = function () {
 			this.name_logger.log("info", this.current.name);
 			this.list.shift();
 			if (this.current && (this.current.name in this.listener_list)) {
-				for (var i in BOARDFUL.Event.LEVELS) {
-					if (BOARDFUL.Event.LEVELS[i] in this.listener_list[this.current.name]) {
-						for (var j in this.listener_list[this.current.name][BOARDFUL.Event.LEVELS[i]]) {
-							var listener = this.listener_list[this.current.name][BOARDFUL.Event.LEVELS[i]][j];
+				for (var i in BOARDFUL.core.EVENT_LEVELS) {
+					if (BOARDFUL.core.EVENT_LEVELS[i] in this.listener_list[this.current.name]) {
+						for (var j in this.listener_list[this.current.name][BOARDFUL.core.EVENT_LEVELS[i]]) {
+							var listener = this.listener_list[this.current.name][BOARDFUL.core.EVENT_LEVELS[i]][j];
 							this.logger.log("info", "listener", BOARDFUL.Mngr.get(listener.id).name);
 							// trigger listener callback for event
 							listener.callback(this.current.arg);
@@ -158,7 +249,8 @@ BOARDFUL.core.EventManager.prototype.run = function () {
 BOARDFUL.core.Namespace("BOARDFUL.core");
 
 // file loader
-BOARDFUL.core.FileLoader = function (list, callback) {
+BOARDFUL.core.FileLoader = function (mngr, list, callback) {
+	this.mngr = mngr;
 	this.list = list;
 	this.callback = callback;
 	this.done = false;
@@ -168,7 +260,7 @@ BOARDFUL.core.FileLoader = function (list, callback) {
 BOARDFUL.core.FileLoader.prototype.load = function () {
 	this.done = true;
 	for (var i in this.list) {
-		if (! (this.list[i] in BOARDFUL.File.name_list) || "loaded" != BOARDFUL.File.list[BOARDFUL.File.name_list[this.list[i]]].status) {
+		if (! (this.list[i] in this.mngr.name_list) || "loaded" != this.mngr.list[this.mngr.name_list[this.list[i]]].status) {
 			this.done = false;
 			this.loadFile(this.list[i]);
 		}
@@ -179,12 +271,16 @@ BOARDFUL.core.FileLoader.prototype.load = function () {
 			that.load();
 		}, 500);
 	} else {
-		this.callback();
+		var param = {};
+		for (var i in this.list) {
+			param[this.list[i]] = this.mngr.list[this.mngr.name_list[this.list[i]]].content;
+		}
+		this.callback(param);
 	}
 };
 // load a file
 BOARDFUL.core.FileLoader.prototype.loadFile = function (file) {
-	switch (BOARDFUL.Envi.type) {
+	switch (BOARDFUL.core.Envi.type) {
 	case "browser":
 		this.loadByAjax(file);
 		break;
@@ -198,57 +294,71 @@ BOARDFUL.core.FileLoader.prototype.loadFile = function (file) {
 BOARDFUL.core.FileLoader.prototype.loadByRequire = function (file) {
 	try {
 		var script = require("../" + file);
-		BOARDFUL.File.add(file, script, "loaded");
-		BOARDFUL.File.logger.log("info", "file loaded", file);
+		this.mngr.add(file, script, "loaded");
+		this.mngr.logger.log("info", "file loaded", file);
 	} catch (err) {
-		BOARDFUL.File.add(file, "", "failed");
-		BOARDFUL.File.logger.log("info", "file failed", file, err);
+		this.mngr.add(file, "", "failed");
+		this.mngr.logger.log("info", "file failed", file, err);
 	}
 };
 // load a file via ajax by browser
 BOARDFUL.core.FileLoader.prototype.loadByAjax = function (file) {
-	var true_file = "../" + file;
+	var that = this;
+	var true_file = "./" + file;
 	if (".js" == file.substr(file.length - 3)) {
 		// load a js script
 		$.getScript(true_file)
 			.done(function( script, textStatus ) {
-				BOARDFUL.File.add(file, script, "loaded");
-				BOARDFUL.File.logger.log("info", "js loaded", file);
+				that.mngr.add(file, script, "loaded");
+				that.mngr.logger.log("info", "js loaded", file);
 			})
 			.fail(function( jqxhr, settings, exception ) {
-				BOARDFUL.File.add(file, "", "failed");
-				BOARDFUL.File.logger.log("info", "js failed", file);
+				that.mngr.add(file, "", "failed");
+				that.mngr.logger.log("info", "js failed", file);
 			});
 	}
 	else if (".css" == file.substr(file.length - 4)) {
 		// load a css
 		$('head').append( $('<link rel="stylesheet" type="text/css" />').attr('href', true_file) );
-		BOARDFUL.File.add(file, "", "loaded");
-		BOARDFUL.File.logger.log("info", "css loaded", file);
+		this.mngr.add(file, "", "loaded");
+		this.mngr.logger.log("info", "css loaded", file);
 	}
 	else if (".json" == file.substr(file.length - 5)) {
 		$.getJSON(true_file, function(data, textStatus, jqXHR) {
-			BOARDFUL.File.add(file, data, "loaded");
-			BOARDFUL.File.logger.log("info", "json loaded", file);
+			that.mngr.add(file, data, "loaded");
+			that.mngr.logger.log("info", "json loaded", file);
 		})
 		.fail(function (jqXHR, textStatus, errorThrown) {
-			BOARDFUL.File.add(file, "", "failed");
-			BOARDFUL.File.logger.log("info", "json failed", file);
+			that.mngr.add(file, "", "failed");
+			that.mngr.logger.log("info", "json failed", file, textStatus, errorThrown);
 		})
 		.always(function(data, textStatus, jqXHR) {
 		});
 	}
 	else {
-		BOARDFUL.File.add(file, "", "loaded");
-		BOARDFUL.File.logger.log("info", "file unknown", file);
+		this.mngr.add(file, "", "loaded");
+		this.mngr.logger.log("info", "file unknown", file);
 	}
 };
 BOARDFUL.core.Namespace("BOARDFUL.core");
 
+// file manager
 BOARDFUL.core.FileManager = function () {
 	this.list = [];
 	this.name_list = {};
 	this.next_id = 0;
+
+	// file mngr logger
+	this.logger = new BOARDFUL.core.Logger();
+	this.logger.add(winston.transports.File, {
+		filename: 'logs/file.log'
+	})
+	.remove(winston.transports.Console);
+	this.logger.log('info', "----------launch----------");
+};
+// load files
+BOARDFUL.core.FileManager.prototype.load = function (files, callback) {
+	var loader = new BOARDFUL.core.FileLoader(this, files, callback);
 };
 // add to file list
 BOARDFUL.core.FileManager.prototype.add = function (file, content, status) {
@@ -276,6 +386,196 @@ BOARDFUL.core.FileManager.prototype.getFromHtml = function () {
 	$("script").each(function () {
 		this.add($(this).attr("src"), $(this), "loaded");
 	});
+	this.logger.log('info', "files in html", this.name_list);
+};
+BOARDFUL.core.Namespace("BOARDFUL.core");
+
+BOARDFUL.core.Game = function (board, config) {
+	this.type = "Game";
+	this.owner = undefined;
+	BOARDFUL.Mngr.add(this);
+	this.board = board || {};
+	this.config = config || {};
+	this.table_list = {};
+	this.deck_list = {};
+	this.player_list = {};
+	this.cardset_list = {};
+	BOARDFUL.EventMngr = new BOARDFUL.core.EventManager();
+	this.addListeners();
+};
+BOARDFUL.core.Game.prototype.addListeners = function () {
+	var that = this;
+	BOARDFUL.EventMngr.on("GameInit", {
+		level: "game",
+		callback: function (arg) {
+			that.gameInit(arg);
+		},
+		id: that.id
+	});
+	BOARDFUL.EventMngr.on("TableCreate", {
+		level: "game",
+		callback: function (arg) {
+			that.tableCreate(arg);
+		},
+		id: that.id
+	});
+	BOARDFUL.EventMngr.on("DeckCreate", {
+		level: "game",
+		callback: function (arg) {
+			that.deckCreate(arg);
+		},
+		id: that.id
+	});
+	BOARDFUL.EventMngr.on("PlayerCreate", {
+		level: "game",
+		callback: function (arg) {
+			that.playerCreate(arg);
+		},
+		id: that.id
+	});
+	BOARDFUL.EventMngr.on("CardSetCreate", {
+		level: "game",
+		callback: function (arg) {
+			that.cardSetCreate(arg);
+		},
+		id: that.id
+	});
+	BOARDFUL.EventMngr.on("GameStart", {
+		level: "game",
+		callback: function (arg) {
+			that.gameStart(arg);
+		},
+		id: that.id
+	});
+};
+BOARDFUL.core.Game.prototype.run = function () {
+	BOARDFUL.Game.status = "run";
+	BOARDFUL.EventMngr.run();
+	var event_list = [];
+	var event = new BOARDFUL.core.Event({
+		name: "GameInit"
+	});
+	event_list.push(event.id);
+	BOARDFUL.EventMngr.front(event_list);
+};
+BOARDFUL.core.Game.prototype.gameInit = function (arg) {
+	this.board.board = this.board.board || {};
+	var event_list = [];
+	if (undefined !== this.board.board.tables) {
+		var table_num = parseInt(this.board.board.tables.number);
+		for (var i = 0; i < table_num; ++ i) {
+			var event = new BOARDFUL.core.Event({
+				name: "TableCreate",
+				target: this.board.board.tables.names[i]
+			});
+			event_list.push(event.id);
+		}
+	}
+	if (undefined !== this.board.board.decks) {
+		var deck_num = parseInt(this.board.board.decks.number);
+		for (var i = 0; i < deck_num; ++ i) {
+			var event = new BOARDFUL.core.Event({
+				name: "DeckCreate",
+				target: this.board.board.decks.names[i]
+			});
+			event_list.push(event.id);
+		}
+	}
+	if (undefined !== this.board.board.players) {
+		var player_num = parseInt(this.board.board.players.number);
+		for (var i = 0; i < player_num; ++ i) {
+			var event = new BOARDFUL.core.Event({
+				name: "PlayerCreate",
+				target: this.board.board.players.names[i]
+			});
+			event_list.push(event.id);
+		}
+	}
+	if (undefined !== this.board.board.cardSets) {
+		var card_num = parseInt(this.board.board.cardSets.number);
+		for (var i = 0; i < card_num; ++ i) {
+			var event = new BOARDFUL.core.Event({
+				name: "CardSetCreate",
+				target: this.board.board.cardSets.namespaces[i]
+			});
+			event_list.push(event.id);
+		}
+	}
+	var event = new BOARDFUL.core.Event({
+		name: "GameStart"
+	});
+	event_list.push(event.id);
+	BOARDFUL.EventMngr.front(event_list);
+};
+BOARDFUL.core.Game.prototype.tableCreate = function (arg) {
+	this.table_list[arg.target] = new BOARDFUL.core.Table(this.id, {
+		name: arg.target
+	});
+};
+BOARDFUL.core.Game.prototype.deckCreate = function (arg) {
+	this.deck_list[arg.target] = new BOARDFUL.core.Deck(this.id, {
+		name: arg.target
+	});
+};
+BOARDFUL.core.Game.prototype.playerCreate = function (arg) {
+	this.player_list[arg.target] = new BOARDFUL.core.Player(this.id, {
+		name: arg.target
+	});
+};
+BOARDFUL.core.Game.prototype.cardSetCreate = function (arg) {
+};
+BOARDFUL.core.Game.prototype.gameStart = function (arg) {
+	this.board.flow = this.board.flow || {};
+	var event_list = [];
+	if (undefined !== this.board.flow.initCards) {
+		var event = new BOARDFUL.core.Event({
+			name: "InitCards",
+			number: this.board.flow.initCards
+		});
+		event_list.push(event.id);
+	}
+	if (undefined !== this.board.flow.roundAction) {
+		var event = new BOARDFUL.core.Event({
+			name: "RoundActionStart"
+		});
+		event_list.push(event.id);
+		if (undefined !== this.board.flow.roundAction.drawPhase) {
+			var event = new BOARDFUL.core.Event({
+				name: "RoundActionDrawPhase",
+				number: this.board.flow.roundAction.drawPhase
+			});
+			event_list.push(event.id);
+		}
+		if (undefined !== this.board.flow.roundAction.playPhase) {
+			var event = new BOARDFUL.core.Event({
+				name: "RoundActionPlayPhase",
+				number: this.board.flow.roundAction.playPhase
+			});
+			event_list.push(event.id);
+		}
+		if (undefined !== this.board.flow.roundAction.endPhase) {
+			var event = new BOARDFUL.core.Event({
+				name: "RoundActionEndPhase",
+				number: this.board.flow.roundAction.endPhase
+			});
+			event_list.push(event.id);
+		}
+		var event = new BOARDFUL.core.Event({
+			name: "RoundActionEnd"
+		});
+		event_list.push(event.id);
+	}
+	if (undefined !== this.board.flow.playerAction) {
+		var event = new BOARDFUL.core.Event({
+			name: "playerActionStart"
+		});
+		event_list.push(event.id);
+		var event = new BOARDFUL.core.Event({
+			name: "playerActionEnd"
+		});
+		event_list.push(event.id);
+	}
+	BOARDFUL.EventMngr.front(event_list);
 };
 BOARDFUL.core.Namespace("BOARDFUL.core");
 var winston = {
@@ -443,6 +743,30 @@ BOARDFUL.core.parseUrl = function () {
 		}
 	}
 	return param;
+};
+BOARDFUL.core.Namespace("BOARDFUL.core");
+
+BOARDFUL.core.Player = function (owner, config) {
+	this.type = "Player";
+	this.owner = undefined;
+	BOARDFUL.Mngr.add(this);
+	this.config = config || {};
+	this.card_list = {};
+	this.addListeners();
+};
+BOARDFUL.core.Player.prototype.addListeners = function () {
+};
+BOARDFUL.core.Namespace("BOARDFUL.core");
+
+BOARDFUL.core.Table = function (owner, config) {
+	this.type = "Table";
+	this.owner = undefined;
+	BOARDFUL.Mngr.add(this);
+	this.config = config || {};
+	this.card_list = {};
+	this.addListeners();
+};
+BOARDFUL.core.Table.prototype.addListeners = function () {
 };
 BOARDFUL.core.Namespace("BOARDFUL.core");
 

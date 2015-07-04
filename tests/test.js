@@ -8,6 +8,7 @@ var test = function () {
 	test.logger();
 	test.manager();
 	test.event();
+	test.board_visualizer();
 };
 test.core = function () {
 	console.debug("Test case core - namespace:");
@@ -37,4 +38,12 @@ test.manager = function () {
 };
 test.event = function () {
 	console.debug("Test case event - 0:");
+};
+test.board_visualizer = function () {
+	console.debug("Test case board_visualizer - 0:");
+	$.getJson("resources/poker_one.json", function (data) {
+		console.debug(data);
+		var loader = new BOARDFUL.core.BoardLoader(data);
+		
+	});
 };
